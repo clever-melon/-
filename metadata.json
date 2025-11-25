@@ -1,0 +1,8 @@
+{
+  "name": "Bao Retro Camera",
+  "description": "A nostalgic retro camera experience powered by AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
