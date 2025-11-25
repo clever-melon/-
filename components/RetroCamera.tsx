@@ -3,7 +3,7 @@ import Webcam from 'react-webcam';
 import { Polaroid } from './Polaroid';
 import { Photo } from '../types';
 import { generateCaption } from '../services/geminiService';
-import { SwitchCamera, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 // Shutter sound URL (standard mechanical shutter)
@@ -19,20 +19,26 @@ interface RetroCameraProps {
 const mirrorImage = (imageSrc: string): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
+    // Use the src directly, no need for crossOrigin with data URLs
     img.onload = () => {
       const canvas = document.createElement('canvas');
       canvas.width = img.width;
       canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       if (ctx) {
+        // Horizontal flip logic:
+        // 1. Move origin to the right edge
         ctx.translate(canvas.width, 0);
+        // 2. Flip the x-axis (points leftwards now)
         ctx.scale(-1, 1);
-        ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg'));
+        // 3. Draw image at (0,0), which draws from right to left
+        ctx.drawImage(img, 0, 0, img.width, img.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
       } else {
-        resolve(imageSrc); // Fallback
+        resolve(imageSrc); // Fallback if context fails
       }
     };
+    img.onerror = () => resolve(imageSrc); // Fallback if image load fails
     img.src = imageSrc;
   });
 };
@@ -44,20 +50,31 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const [isFlipping, setIsFlipping] = useState(false);
 
+  useEffect(() => {
+    audioRef.current.load();
+  }, []);
+
   const capture = async () => {
     if (!isCameraOn) return;
     
     if (webcamRef.current && !ejectingPhoto) {
       // Play sound
-      audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(e => console.log("Audio play blocked", e));
+      const audio = audioRef.current;
+      audio.currentTime = 0;
+      audio.play().catch(e => console.log("Audio play blocked", e));
 
       let imageSrc = webcamRef.current.getScreenshot();
       if (!imageSrc) return;
 
-      // If front camera, mirror the image so it matches the preview (WYSIWYG)
+      // WYSIWYG Logic:
+      // If we are showing the user a mirrored preview (CSS scaleX(-1)),
+      // we MUST mirror the captured image so the result matches the preview exactly.
       if (facingMode === 'user') {
-        imageSrc = await mirrorImage(imageSrc);
+        try {
+            imageSrc = await mirrorImage(imageSrc);
+        } catch (e) {
+            console.error("Mirror processing failed", e);
+        }
       }
 
       const now = new Date();
@@ -201,7 +218,7 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
       >
         {isCameraOn ? (
           <Webcam
-            // Fix: Add key to force re-mount on facing mode change, preventing black screen
+            // Force re-mount on facing mode change to prevent black screen
             key={facingMode} 
             audio={false}
             ref={webcamRef}
@@ -210,8 +227,13 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
               facingMode: facingMode,
               aspectRatio: 1
             }}
-            // Mirror preview only if user facing
-            className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} 
+            // IMPORTANT: We do NOT use the 'mirrored' prop from react-webcam here anymore.
+            // Instead, we strictly control the visual flip via CSS style below.
+            // This ensures the preview matches our manual canvas flip logic exactly.
+            className="w-full h-full object-cover"
+            style={{
+                transform: facingMode === 'user' ? 'scaleX(-1)' : 'none'
+            }}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-900 text-gray-500 text-xs">
