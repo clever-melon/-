@@ -15,34 +15,6 @@ interface RetroCameraProps {
   isCameraOn: boolean;
 }
 
-// Helper to mirror image data for WYSIWYG selfies
-const mirrorImage = (imageSrc: string): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    // Use the src directly, no need for crossOrigin with data URLs
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        // Horizontal flip logic:
-        // 1. Move origin to the right edge
-        ctx.translate(canvas.width, 0);
-        // 2. Flip the x-axis (points leftwards now)
-        ctx.scale(-1, 1);
-        // 3. Draw image at (0,0), which draws from right to left
-        ctx.drawImage(img, 0, 0, img.width, img.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.9));
-      } else {
-        resolve(imageSrc); // Fallback if context fails
-      }
-    };
-    img.onerror = () => resolve(imageSrc); // Fallback if image load fails
-    img.src = imageSrc;
-  });
-};
-
 export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCaptionReceived, isCameraOn }) => {
   const webcamRef = useRef<Webcam>(null);
   const [ejectingPhoto, setEjectingPhoto] = useState<Photo | null>(null);
@@ -63,19 +35,8 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
       audio.currentTime = 0;
       audio.play().catch(e => console.log("Audio play blocked", e));
 
-      let imageSrc = webcamRef.current.getScreenshot();
+      const imageSrc = webcamRef.current.getScreenshot();
       if (!imageSrc) return;
-
-      // WYSIWYG Logic:
-      // If we are showing the user a mirrored preview (CSS scaleX(-1)),
-      // we MUST mirror the captured image so the result matches the preview exactly.
-      if (facingMode === 'user') {
-        try {
-            imageSrc = await mirrorImage(imageSrc);
-        } catch (e) {
-            console.error("Mirror processing failed", e);
-        }
-      }
 
       const now = new Date();
       const formattedDate = now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '.');
@@ -227,13 +188,9 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
               facingMode: facingMode,
               aspectRatio: 1
             }}
-            // IMPORTANT: We do NOT use the 'mirrored' prop from react-webcam here anymore.
-            // Instead, we strictly control the visual flip via CSS style below.
-            // This ensures the preview matches our manual canvas flip logic exactly.
+            // Use standard library mirroring for preview
+            mirrored={facingMode === 'user'}
             className="w-full h-full object-cover"
-            style={{
-                transform: facingMode === 'user' ? 'scaleX(-1)' : 'none'
-            }}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-900 text-gray-500 text-xs">
