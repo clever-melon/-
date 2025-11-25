@@ -1,22 +1,26 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Safety wrapper for environment variable access in Vite/Browser environments
-// This prevents "ReferenceError: process is not defined" when deployed to Vercel
-const getApiKey = () => {
-  try {
-    // Try process.env first (for AI Studio / environments where it's polyfilled)
-    return process.env.API_KEY;
-  } catch (e) {
-    // Fallback for standard Vite builds where process is not defined
-    // @ts-ignore
-    return (import.meta as any).env?.VITE_API_KEY || '';
-  }
-};
+// Access the API key injected by Vite
+// The 'define' plugin in vite.config.ts replaces process.env.API_KEY with the actual string
+const API_KEY = process.env.API_KEY || '';
 
-const ai = new GoogleGenAI({ apiKey: getApiKey() });
+let aiClient: GoogleGenAI | null = null;
+
+const getAiClient = () => {
+  if (!aiClient) {
+    if (!API_KEY) {
+      console.warn("API Key is missing. AI features will likely fail.");
+    }
+    aiClient = new GoogleGenAI({ apiKey: API_KEY });
+  }
+  return aiClient;
+};
 
 export const generateCaption = async (imageBase64: string, language: string = 'zh-CN'): Promise<string> => {
   try {
+    // Lazy initialize client here
+    const ai = getAiClient();
+
     // Detect mime type from the data URL (e.g., data:image/jpeg;base64,...)
     const mimeMatch = imageBase64.match(/^data:(image\/[a-zA-Z+]+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
