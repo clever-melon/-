@@ -1,6 +1,19 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safety wrapper for environment variable access in Vite/Browser environments
+// This prevents "ReferenceError: process is not defined" when deployed to Vercel
+const getApiKey = () => {
+  try {
+    // Try process.env first (for AI Studio / environments where it's polyfilled)
+    return process.env.API_KEY;
+  } catch (e) {
+    // Fallback for standard Vite builds where process is not defined
+    // @ts-ignore
+    return (import.meta as any).env?.VITE_API_KEY || '';
+  }
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 export const generateCaption = async (imageBase64: string, language: string = 'zh-CN'): Promise<string> => {
   try {
