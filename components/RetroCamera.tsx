@@ -15,6 +15,28 @@ interface RetroCameraProps {
   isCameraOn: boolean;
 }
 
+// Helper to mirror image data for WYSIWYG selfies
+const mirrorImage = (imageSrc: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg'));
+      } else {
+        resolve(imageSrc); // Fallback
+      }
+    };
+    img.src = imageSrc;
+  });
+};
+
 export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCaptionReceived, isCameraOn }) => {
   const webcamRef = useRef<Webcam>(null);
   const [ejectingPhoto, setEjectingPhoto] = useState<Photo | null>(null);
@@ -30,8 +52,13 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(e => console.log("Audio play blocked", e));
 
-      const imageSrc = webcamRef.current.getScreenshot();
+      let imageSrc = webcamRef.current.getScreenshot();
       if (!imageSrc) return;
+
+      // If front camera, mirror the image so it matches the preview (WYSIWYG)
+      if (facingMode === 'user') {
+        imageSrc = await mirrorImage(imageSrc);
+      }
 
       const now = new Date();
       const formattedDate = now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '.');
@@ -174,6 +201,8 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
       >
         {isCameraOn ? (
           <Webcam
+            // Fix: Add key to force re-mount on facing mode change, preventing black screen
+            key={facingMode} 
             audio={false}
             ref={webcamRef}
             screenshotFormat="image/jpeg"
@@ -181,7 +210,7 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
               facingMode: facingMode,
               aspectRatio: 1
             }}
-            // Mirror only if user facing
+            // Mirror preview only if user facing
             className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} 
           />
         ) : (
