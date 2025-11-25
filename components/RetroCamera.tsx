@@ -179,16 +179,21 @@ export const RetroCamera: React.FC<RetroCameraProps> = ({ onPhotoEjected, onCapt
       >
         {isCameraOn ? (
           <Webcam
-            // Force re-mount on facing mode change to prevent black screen
+            // Key is critical! Changing it forces React to destroy and recreate the component.
+            // This fixes black screens when switching cameras.
             key={facingMode} 
             audio={false}
             ref={webcamRef}
             screenshotFormat="image/jpeg"
+            screenshotQuality={1} // Request max quality
+            minScreenshotWidth={1024} // Ensure decent resolution
             videoConstraints={{
               facingMode: facingMode,
-              aspectRatio: 1
+              aspectRatio: 1,
+              width: { ideal: 1920 }, // Request higher resolution stream
+              height: { ideal: 1920 }
             }}
-            // Use standard library mirroring for preview
+            // Use standard library mirroring prop for preview
             mirrored={facingMode === 'user'}
             className="w-full h-full object-cover"
           />
