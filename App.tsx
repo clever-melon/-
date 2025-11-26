@@ -6,22 +6,16 @@ import { Power, Images, RotateCcw } from 'lucide-react';
 
 const STORAGE_KEY = 'bao-retro-photos';
 
-// Mock data for public gallery
-const MOCK_PUBLIC_PHOTOS: Photo[] = [
-  { id: 'p1', imageData: 'https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=500&auto=format&fit=crop&q=60', caption: '(｡♥‿♥｡)', date: '2025.11.23', x: 0, y: 0, rotation: -3, isDeveloping: false, zIndex: 1, secretMessage: "它真的很爱睡觉...", isPublic: true },
-  { id: 'p2', imageData: 'https://images.unsplash.com/photo-1595433707802-6b2626ef1c91?w=500&auto=format&fit=crop&q=60', caption: '(≧◡≦)', date: '2025.11.22', x: 0, y: 0, rotation: 2, isDeveloping: false, zIndex: 1, secretMessage: "偷吃了一口鱼干", isPublic: true },
-  { id: 'p3', imageData: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500&auto=format&fit=crop&q=60', caption: '(⊙_⊙)', date: '2025.11.21', x: 0, y: 0, rotation: -5, isDeveloping: false, zIndex: 1, secretMessage: "别惹我！", isPublic: true },
-  { id: 'p4', imageData: 'https://images.unsplash.com/photo-1533738363-b7f9aef128ce?w=500&auto=format&fit=crop&q=60', caption: '(*^▽^*)', date: '2025.11.20', x: 0, y: 0, rotation: 4, isDeveloping: false, zIndex: 1, secretMessage: "新玩具get", isPublic: true },
-];
-
 export default function App() {
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [publicPhotos, setPublicPhotos] = useState<Photo[]>([]); // Store shared photos
   const wallRef = useRef<HTMLDivElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [view, setView] = useState<'camera' | 'gallery'>('camera');
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Load photos from localStorage on mount
+  // Load local photos on mount
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -35,12 +29,34 @@ export default function App() {
     setIsLoaded(true);
   }, []);
 
-  // Save photos to localStorage whenever they change
+  // Save local photos
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(photos));
     }
   }, [photos, isLoaded]);
+
+  // Fetch public gallery when switching to gallery view
+  useEffect(() => {
+    if (view === 'gallery') {
+      fetchPublicGallery();
+    }
+  }, [view]);
+
+  const fetchPublicGallery = async () => {
+    try {
+      const res = await fetch('/api/gallery');
+      if (res.ok) {
+        const data = await res.json();
+        // Ensure data is array
+        if (Array.isArray(data)) {
+            setPublicPhotos(data);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch public gallery", error);
+    }
+  };
 
   const handlePhotoEjected = (newPhoto: Photo) => {
     setPhotos(prev => [...prev, newPhoto]);
@@ -72,8 +88,40 @@ export default function App() {
     setPhotos(prev => prev.map(p => p.id === id ? { ...p, caption } : p));
   };
 
-  const handleAddToGallery = (id: string) => {
+  const handleAddToGallery = async (id: string) => {
+    const photoToShare = photos.find(p => p.id === id);
+    if (!photoToShare || isUploading) return;
+
+    // Optimistic update locally
     setPhotos(prev => prev.map(p => p.id === id ? { ...p, isPublic: true } : p));
+
+    setIsUploading(true);
+    try {
+        const res = await fetch('/api/gallery', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ...photoToShare,
+                isPublic: true,
+                // Sanitize position for grid display
+                x: 0,
+                y: 0,
+                zIndex: 1,
+                rotation: 0
+            })
+        });
+
+        if (res.ok) {
+            // Refresh gallery if currently viewing it, or just for cache
+            fetchPublicGallery();
+        } else {
+            alert("分享失败，请稍后再试");
+        }
+    } catch (e) {
+        console.error("Share failed", e);
+    } finally {
+        setIsUploading(false);
+    }
   };
 
   return (
@@ -112,7 +160,7 @@ export default function App() {
       {/* --- CAMERA VIEW --- */}
       {view === 'camera' && (
         <>
-          {/* Instructions - Updated */}
+          {/* Instructions */}
           <div className="absolute top-24 md:top-auto md:bottom-8 md:right-8 max-w-[200px] md:max-w-xs text-right z-10 opacity-70 hover:opacity-100 transition-opacity pointer-events-none select-none right-4">
             <h3 className="text-lg md:text-xl font-bold mb-1 md:mb-2 cute-chinese">使用说明：</h3>
             <p className="text-xs md:text-sm font-sans mb-1">1. 点击粉色按钮拍照。</p>
@@ -132,7 +180,6 @@ export default function App() {
                 onUpdateSecret={handleUpdateSecret}
                 onAddToGallery={handleAddToGallery}
                 className="absolute"
-                // Fix: Pass left/top coordinates to ensure it renders where dropped
                 style={{ left: photo.x, top: photo.y, zIndex: photo.zIndex }} 
               />
             ))}
@@ -158,10 +205,9 @@ export default function App() {
             {/* Gallery Grid */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 md:gap-12 place-items-center">
                
-               {/* Display User's PUBLIC Photos */}
-               {photos.filter(p => p.isPublic).map(photo => (
+               {/* Display Public Photos from Server */}
+               {publicPhotos.map(photo => (
                  <div key={photo.id} className="relative w-36 md:w-64 aspect-[3/4.2]">
-                    {/* Note: We do NOT pass className="absolute" here. We want relative positioning in grid. */}
                     <Polaroid 
                       photo={{...photo, isDeveloping: false}} 
                       isPinned={true}
@@ -170,16 +216,11 @@ export default function App() {
                  </div>
                ))}
                
-               {/* Mock Public Photos */}
-               {MOCK_PUBLIC_PHOTOS.map(photo => (
-                 <div key={photo.id} className="relative w-36 md:w-64 aspect-[3/4.2]">
-                    <Polaroid 
-                      photo={photo} 
-                      isPinned={true}
-                      style={{ transform: `rotate(${Math.random() * 6 - 3}deg)` }}
-                    />
+               {publicPhotos.length === 0 && (
+                 <div className="col-span-full text-white/60 cute-chinese text-xl mt-10">
+                    加载中或还没有人分享照片哦...
                  </div>
-               ))}
+               )}
             </div>
           </div>
         </div>
